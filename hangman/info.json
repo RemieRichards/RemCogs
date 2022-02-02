@@ -1,0 +1,13 @@
+{
+    "author" : ["RemieRichards (RemieRichards#1758)"],
+    "install_msg" : "Solve some hangman puzzles, get some chump change.",
+    "name" : "Hangman",
+    "short" : "Hangman minigame.",
+    "requirements" : [],
+    "description" : "Play hangman to earn currency.",
+    "permissions" : ["Manage Messages", "Embed Links"],
+    "tags" : ["Games", "Economy", "Fun", "Hangman"],
+    "min_python_version": [3, 8, 1],
+    "min_bot_version": "3.2.0",
+    "end_user_data_statement": "This cog doesnt store any user data."
+}
