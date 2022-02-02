@@ -15,7 +15,6 @@ from redbot.core.data_manager import bundled_data_path
 import discord
 
 ##TODO:
-## - guessed letter list (i.e. "Guessed: A, B, C, D..."
 ## - ability to guess the word by typing "guess YOURWORD" (not just word as you may want to talk while playing)
 
 class HangmanSession:
@@ -23,6 +22,7 @@ class HangmanSession:
         self.datapath = bundled_data_path(self)
         self.mistakes = 0
         self.last_guess_good = None
+        self.guessed_letters = {}
         await self.pick_word(ctx)
         await self.hangman_loop(ctx)
     
@@ -38,7 +38,10 @@ class HangmanSession:
         print(self.word)
         self.word_guessing = ""
         for x in range(len(self.word)):
-            self.word_guessing += "_"
+            if x == "-":
+                self.word_guessing += "-"
+            else:
+                self.word_guessing += "_"
 
     async def hangman_loop(self, ctx, message=None):
         embed = self.word_embed(ctx)
@@ -48,7 +51,7 @@ class HangmanSession:
             message = await ctx.send(ctx.author.mention, embed=embed)
         guess = await self.get_guess(ctx)
         if guess == None:
-            await ctx.send(ctx.author.mention, "Time's up!")
+            await ctx.send(ctx.author.mention+" time's up! the word was **"+self.word+"**")
             return
         else:
             await self.guess(ctx, guess)
@@ -109,6 +112,17 @@ class HangmanSession:
 
         desc += word_output
         desc += "```\n"
+        
+        if len(self.guessed_letters)>0:
+            desc += "Guessed: "
+            first = True
+            for i, letter in enumerate(self.guessed_letters.keys()):
+                if not first:
+                    desc += ", "
+                desc += str(letter)
+                first = False
+            desc += "\n"          
+            
         if self.mistakes > 0:
             desc += str(self.mistakes)+"/6 mistakes\n"
 
@@ -146,14 +160,20 @@ class HangmanSession:
     
     async def get_guess(self, ctx):
         try:        
-            condition = MessagePredicate.length_less(2, ctx) #single letter guesses only      
+            condition = MessagePredicate.length_less(1, ctx) #single letter guesses only      
             msg = await ctx.bot.wait_for("message", check=condition, timeout=60)
-            return msg.content.lower()
+            guess = msg.content.lower()
+            await msg.delete()
+            return guess
         except asyncio.TimeoutError:
             return None
         return None
     
     async def guess(self, ctx, g):
+        if g in self.guessed_letters:
+            return
+    
+        self.guessed_letters[g] = True
         success = False
         for i, c in enumerate(self.word):
             if c == g:
