@@ -14,7 +14,9 @@ from redbot.core.data_manager import bundled_data_path
 # Discord
 import discord
 
-#TODO: https://autocode.com/tools/discord/embed-builder/
+##TODO:
+## - guessed letter list (i.e. "Guessed: A, B, C, D..."
+## - ability to guess the word by typing "guess YOURWORD" (not just word as you may want to talk while playing)
 
 class HangmanSession:
     async def play(self, ctx):
@@ -25,12 +27,6 @@ class HangmanSession:
         await self.hangman_loop(ctx)
     
     async def pick_word(self, ctx):
-        self.word = random.choice([
-            "test",
-            "fuck",
-            "wow"
-        ])
-              
         try:
             with open(self.datapath / "words.txt") as f:
                 wordlist = f.read().splitlines()
@@ -52,7 +48,7 @@ class HangmanSession:
             message = await ctx.send(ctx.author.mention, embed=embed)
         guess = await self.get_guess(ctx)
         if guess == None:
-            await ctx.send("Game timedout")
+            await ctx.send(ctx.author.mention, "Time's up!")
             return
         else:
             await self.guess(ctx, guess)
@@ -114,7 +110,7 @@ class HangmanSession:
         desc += word_output
         desc += "```\n"
         if self.mistakes > 0:
-            desc += str(self.mistakes)+"/6 mistakes"
+            desc += str(self.mistakes)+"/6 mistakes\n"
 
         colour = 0x20B2AA
         if self.last_guess_good == True:
@@ -151,7 +147,7 @@ class HangmanSession:
     async def get_guess(self, ctx):
         try:        
             condition = MessagePredicate.length_less(2, ctx) #single letter guesses only      
-            msg = await ctx.bot.wait_for("message", check=condition, timeout=35.0)
+            msg = await ctx.bot.wait_for("message", check=condition, timeout=60)
             return msg.content.lower()
         except asyncio.TimeoutError:
             return None
