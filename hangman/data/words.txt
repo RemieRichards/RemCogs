@@ -1061,6 +1061,7 @@ impolite
 important
 imported
 impossible
+imposter
 impress
 improve
 impulse
