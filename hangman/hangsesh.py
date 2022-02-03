@@ -37,9 +37,11 @@ class HangmanSession:
         self.word = random.choice(wordlist)        
         print(self.word)
         self.word_guessing = ""
-        for x in range(len(self.word)):
-            if x == "-":
+        for i,c in enumerate(self.word):
+            if c == "-":
                 self.word_guessing += "-"
+            elif c == " ":
+                self.word_guessing += " "
             else:
                 self.word_guessing += "_"
 
@@ -160,8 +162,10 @@ class HangmanSession:
     
     async def get_guess(self, ctx):
         try:        
-            condition = MessagePredicate.length_less(1, ctx) #single letter guesses only      
-            msg = await ctx.bot.wait_for("message", check=condition, timeout=60)
+            def check_msg(m):
+                return len(m.content.lower())==1
+            
+            msg = await ctx.bot.wait_for("message", check=check_msg, timeout=60)
             guess = msg.content.lower()
             await msg.delete()
             return guess
