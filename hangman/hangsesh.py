@@ -163,7 +163,7 @@ class HangmanSession:
     async def get_guess(self, ctx):
         try:        
             def check_msg(m):
-                return len(m.content.lower())==1
+                return len(m.content.lower())==1 and m.author==ctx.author
             
             msg = await ctx.bot.wait_for("message", check=check_msg, timeout=60)
             guess = msg.content.lower()
