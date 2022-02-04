@@ -442,6 +442,7 @@ cook
 cool
 cooperative
 coordinated
+cope
 copper
 copy
 corn
@@ -1836,6 +1837,7 @@ secretive
 sedate
 seed
 seemly
+seethe
 selection
 selective
 self
