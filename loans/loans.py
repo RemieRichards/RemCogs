@@ -108,8 +108,20 @@ class Loanshark(commands.Cog):
                 await bank.set_balance(user, e.max_balance)
         else:
             await ctx.send(ctx.author.mention+" you can't afford that much!")
-            
-    
+
+    @commands.guild_only()
+    @commands.is_owner()
+    @_loan.command()
+    async def forgive(self, ctx: commands.Context, user: discord.Member):
+        """Forgive the debt you're owed..."""
+        
+        if await self.get_debt(ctx, user, ctx.author) is not None:
+            await self.clear_loan(ctx, ctx.author, user)
+            await ctx.send("All is forgiven")
+        else:
+            await ctx.send(user.display_name+" doesn't owe you any "+str(await bank.get_currency_name(ctx.guild))+"!")
+        
+
     @commands.guild_only()        
     @_loan.command()
     async def list(self, ctx: commands.Context, user: typing.Optional[discord.Member]):
