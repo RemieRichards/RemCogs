@@ -114,9 +114,11 @@ class Loanshark(commands.Cog):
     async def forgive(self, ctx: commands.Context, user: discord.Member):
         """Forgive the debt you're owed..."""
         
-        if await self.get_debt(ctx, user, ctx.author) is not None:
+        loan = await self.get_debt(ctx, user, ctx.author)
+        if loan is not None:
+            await ctx.send(ctx.author.mention+" forgives a debt of "+str(loan["outstanding"])+" "+str(await bank.get_currency_name(ctx.guild))+" from "+user.mention+"!")
             await self.clear_loan(ctx, ctx.author, user)
-            await ctx.send("All is forgiven")
+            
         else:
             await ctx.send(user.display_name+" doesn't owe you any "+str(await bank.get_currency_name(ctx.guild))+"!")
         
