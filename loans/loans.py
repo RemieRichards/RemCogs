@@ -131,8 +131,8 @@ class Loanshark(commands.Cog):
         
         if len(loan_keys)==0:
             whom = "You have"
-            if user is not ctx.author:
-                whom = user.display_name+" has"        
+            if loans_for is not ctx.author:
+                whom = loans_for.display_name+" has"        
             await ctx.send(whom+" no loans!")
             return
 
