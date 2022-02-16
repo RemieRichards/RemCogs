@@ -1,0 +1,13 @@
+{
+    "author" : ["RemieRichards (RemieRichards#1758)"],
+    "install_msg" : "Lend money to your friends! Well... they're your friends *for now!*",
+    "name" : "Loans",
+    "short" : "Loans innit.",
+    "requirements" : [],
+    "description" : "Give your friends a loan! Pay your debts! Capitalism Simulator!",
+    "permissions" : ["Manage Messages"],
+    "tags" : ["Games", "Economy", "Fun"],
+    "min_python_version": [3, 8, 1],
+    "min_bot_version": "3.2.0",
+    "end_user_data_statement": "This cog stores user Ids in order to track who owes who money."
+}
