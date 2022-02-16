@@ -110,7 +110,6 @@ class Loanshark(commands.Cog):
             await ctx.send(ctx.author.mention+" you can't afford that much!")
 
     @commands.guild_only()
-    @commands.is_owner()
     @_loan.command()
     async def forgive(self, ctx: commands.Context, user: discord.Member):
         """Forgive the debt you're owed..."""
