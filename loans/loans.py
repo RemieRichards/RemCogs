@@ -149,7 +149,7 @@ class Loanshark(commands.Cog):
             await ctx.send(whom+" no loans!")
             return
 
-        pound_len = len(str(len(loan_keys)))
+        pound_len = max(4, len(str(len(loan_keys)))+2)
                
         loanee_names = []
         amounts = []
@@ -163,24 +163,26 @@ class Loanshark(commands.Cog):
                 has_interest = True
             
         loanee_names.sort(key=len)
-        loanee_len = len(loanee_names[len(loanee_names)-1])
+        loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
         
         amounts.sort()
-        amount_len = len(str(amounts[len(amounts)-1]))
+        amount_len0 = len(str(amounts[len(amounts)-1]))
+        amount_len = max(6, amount_len0)
+        if has_interest:
+            amount_len = max(8, amount_len0+2)       
         
         header = "{pound:{pound_len}}{loanee:{loanee_len}}{amount:{amount_len}}"
         if has_interest:
-            header += "{interest:{interest_len}}"
+            header += "{interest:2}"
         header += "\n"
         header = header.format(
             pound="#",
             loanee="Loanee",
             amount="Amount",
             interest="Interest",
-            pound_len=pound_len+3,
-            loanee_len=loanee_len+3,
-            amount_len=amount_len+3 if has_interest else amount_len,
-            interest_len=3
+            pound_len=pound_len,
+            loanee_len=loanee_len,
+            amount_len=amount_len,
         )
         
         temp_msg = header       
@@ -199,14 +201,12 @@ class Loanshark(commands.Cog):
                 interest0 = 0
             interest = str(interest0)+"%"
             
-            amount_len_line = amount_len+2
             if not has_interest:
                 interest = ""
-                amount_len_line = amount_len
             temp_msg += (
-                f"{f'{humanize_number(pos)}.': <{pound_len+2}} "
-                f"{f'{loanee.display_name}': <{loanee_len+2}} "               
-                f"{f'{amount}': <{amount_len_line}} "
+                f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
+                f"{f'{loanee.display_name}': <{loanee_len-1}} "               
+                f"{f'{amount}': <{amount_len-1}} "
                 f"{interest}\n"
             )
             
