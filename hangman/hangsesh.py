@@ -46,7 +46,7 @@ class HangmanSession:
                 self.word_guessing += "_"
 
     async def hangman_loop(self, ctx, message=None):
-        embed = self.word_embed(ctx)
+        embed = await self.word_embed(ctx)
         if message is not None:
             await message.edit(content=ctx.author.mention, embed=embed)
         else: 
@@ -58,11 +58,11 @@ class HangmanSession:
         else:
             await self.guess(ctx, guess)
             if self.check_loss():
-                await message.edit(embed=self.word_embed(ctx, False))
+                await message.edit(embed=await self.word_embed(ctx, False))
                 return
             if self.check_win():
                 winnings = random.randint(1,5)
-                await message.edit(embed=self.word_embed(ctx, True, winnings))
+                await message.edit(embed=await self.word_embed(ctx, True, winnings))
                 try:
                     await bank.deposit_credits(ctx.author, winnings)           
                 except BalanceTooHigh as e:
@@ -71,7 +71,7 @@ class HangmanSession:
             else:
                 await self.hangman_loop(ctx, message)
     
-    def word_embed(self, ctx, won=False, winnings=0):
+    async def word_embed(self, ctx, won=False, winnings=0):
         word_output = ""
         
         for i, c in enumerate(self.word_guessing):
@@ -136,7 +136,7 @@ class HangmanSession:
         if won == True:
             colour = 0x00FF00
             desc += "You won!"
-            desc += "\nYou receive "+str(winnings)+(" credits!" if winnings>1 else " credit!")
+            desc += "\nYou receive "+str(winnings)+" "+str(await bank.get_currency_name(ctx.guild))
             
         if self.mistakes == 6:
             colour = 0x000000
