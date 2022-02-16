@@ -44,7 +44,6 @@ class Loanshark(commands.Cog):
         
         
         loans = await self.config.guild(ctx.guild).loans()
-        await ctx.send(str(loans))
         
         if await bank.can_spend(ctx.author, amount):
             if ctx.author is user:
@@ -270,7 +269,6 @@ class Loanshark(commands.Cog):
             await ctx.send(loan_update_msg)
                 
         await self.config.guild(ctx.guild).loans.set(loans)
-        await ctx.send(str(loans))
     
     
     async def clear_loan(self, ctx: commands.Context, loaner: discord.Member, loanee: discord.Member):
