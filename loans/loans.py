@@ -12,7 +12,7 @@ from redbot.core.utils.chat_formatting import box, humanize_number
 from redbot.core.utils.menus import close_menu, menu, DEFAULT_CONTROLS
 from redbot.core.errors import BalanceTooHigh
 
-# Discord
+# Discord 
 import discord
 
 
