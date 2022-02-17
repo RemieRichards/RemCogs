@@ -1,6 +1,8 @@
 # Standard Library
 import typing
+import calendar
 from math import ceil
+from math import floor
 
 # Red
 from redbot.core import bank
@@ -59,7 +61,7 @@ class Loanshark(commands.Cog):
             await ctx.bot.wait_for("reaction_add", check=pred)
             if pred.result is True:
                 await loan_offer.delete()
-                await ctx.send(ctx.author.mention+" loans "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+" to "+user.mention)
+                await ctx.send(ctx.author.mention+" loans "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+loan_txt+" to "+user.mention)
                 try:
                     await self.record_loan(ctx, ctx.author, user, amount, interest)
                     await bank.withdraw_credits(ctx.author, amount)
@@ -87,21 +89,18 @@ class Loanshark(commands.Cog):
             - `[p]loan repay user repayment` - Attempts to repay the specified amount.
         """
     
-        loan = await self.get_debt(ctx, ctx.author, user)
+        loan = await self.get_loan(ctx, user, ctx.author)
         if loan is None:
             await ctx.send("You don't owe "+user.display_name+" any "+str(await bank.get_currency_name(ctx.guild)))
     
-        repaying = loan["outstanding"]
+        repaying = loan.get_outstanding()
         if repayment is not None:
-            repaying = min(loan["outstanding"],repayment)
+            repaying = min(loan.get_outstanding(),repayment)
         
         if await bank.can_spend(ctx.author, repaying):
             await ctx.send(ctx.author.mention+" repays "+str(repaying)+" "+str(await bank.get_currency_name(ctx.guild))+" to "+user.mention)
             try:       
-                if repaying >= loan["outstanding"]:
-                    await self.clear_loan(ctx, user, ctx.author)
-                else:
-                    await self.partial_repay_loan(ctx, user, ctx.author, repaying)  
+                await loan.repay(repaying) 
                 await bank.withdraw_credits(ctx.author, repaying)
                 await bank.deposit_credits(user, repaying)
             except BalanceTooHigh as e:
@@ -114,11 +113,10 @@ class Loanshark(commands.Cog):
     async def forgive(self, ctx: commands.Context, user: discord.Member):
         """Forgive the debt you're owed..."""
         
-        loan = await self.get_debt(ctx, user, ctx.author)
+        loan = await self.get_loan(ctx, ctx.author, user)
         if loan is not None:
-            await ctx.send(ctx.author.mention+" forgives a debt of "+str(loan["outstanding"])+" "+str(await bank.get_currency_name(ctx.guild))+" from "+user.mention+"!")
-            await self.clear_loan(ctx, ctx.author, user)
-            
+            await ctx.send(ctx.author.mention+" forgives a debt of "+str(loan.get_outstanding())+" "+str(await bank.get_currency_name(ctx.guild))+" from "+user.mention+"!")
+            await loan.clear_loan()         
         else:
             await ctx.send(user.display_name+" doesn't owe you any "+str(await bank.get_currency_name(ctx.guild))+"!")
         
@@ -137,52 +135,53 @@ class Loanshark(commands.Cog):
         if user is not None:
             loans_for = user        
             
-        loans = await self.list_loans(ctx, loans_for)        
-
-        loan_keys = list(loans.keys())
-        loan_keys.sort(key=len)
+        loans = await self.list_loans(ctx, loans_for)  
+        loans.sort(key=lambda x: x.get_loanee().display_name)
         
-        if len(loan_keys)==0:
+        if len(loans)==0:
             whom = "You have"
             if loans_for is not ctx.author:
                 whom = loans_for.display_name+" has"        
             await ctx.send(whom+" no loans!")
             return
 
-        pound_len = max(4, len(str(len(loan_keys)))+2)
+        pound_len = max(4, len(str(len(loans)))+2)
                
         loanee_names = []
         amounts = []
+        final_amounts = []
         has_interest = False
-        for i, loanee0 in enumerate(loan_keys):
-            loanee = ctx.guild.get_member(int(loanee0))
+        for i, loan in enumerate(loans):
+            loanee = loan.get_loanee()
             loanee_names.append(loanee.display_name)
-            loan = loans[loanee0]
-            amounts.append(loan["outstanding"])
-            if not has_interest and loan["interest"] is not None:
+            amounts.append(loan.get_pre_interest_amount())
+            final_amounts.append(loan.get_outstanding())
+            if not has_interest and loan.interest is not None:
                 has_interest = True
             
-        loanee_names.sort(key=len)
         loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
         
-        amounts.sort()
         amount_len0 = len(str(amounts[len(amounts)-1]))
-        amount_len = max(6, amount_len0)
+        amount_len = max(8, amount_len0)
         if has_interest:
-            amount_len = max(8, amount_len0+2)       
+            amount_len = max(9, amount_len0+2) #9 not 8 as the title changes to "Initial"
         
+        interest_len0 = len(str(final_amounts[len(final_amounts)-1]))
+        interest_len = max(10, interest_len0+2)
+
         header = "{pound:{pound_len}}{loanee:{loanee_len}}{amount:{amount_len}}"
         if has_interest:
-            header += "{interest:2}"
+            header += "{interest:{interest_len}}Outstanding"
         header += "\n"
         header = header.format(
             pound="#",
             loanee="Loanee",
-            amount="Amount",
+            amount="Initial" if has_interest else "Amount",
             interest="Interest",
             pound_len=pound_len,
             loanee_len=loanee_len,
             amount_len=amount_len,
+            interest_len=interest_len
         )
         
         temp_msg = header       
@@ -192,31 +191,32 @@ class Loanshark(commands.Cog):
         loan_pages = []
         pos = 1
 
-        for i, loanee0 in enumerate(loan_keys):
-            loan = loans[loanee0]
-            loanee = ctx.guild.get_member(int(loanee0))
-            amount = loan["outstanding"]
+        for i, loan in enumerate(loans):
+            loanee = loan.get_loanee()
+            amount = loan.get_pre_interest_amount()
             
-            interest0 = loan["interest"]
+            interest0 = loan.interest
             if interest0 is None:
                 interest0 = 0
             interest = str(interest0)+"%"
-            
-            if not has_interest:
-                interest = ""
+
             temp_msg += (
                 f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
-                f"{f'{loanee.display_name}': <{loanee_len-1}} "               
+                f"{f'{loanee.display_name}': <{loanee_len-1}} "
                 f"{f'{amount}': <{amount_len-1}} "
-                f"{interest}\n"
             )
+            
+            if has_interest:
+                temp_msg += f"{f'{interest}': <{interest_len}}" #no -1, as % symbol
+                temp_msg += f"{loan.get_outstanding()}\n"
+                
             
             if pos % 10 == 0:
                 if embed_requested:
                     embed = base_embed.copy()
                     embed.description = box(temp_msg, lang="md")
                     embed.set_footer(
-                        text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loan_keys)/10))
+                        text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
                     )
                     loan_pages.append(embed)
                 else:
@@ -229,7 +229,7 @@ class Loanshark(commands.Cog):
                 embed = base_embed.copy()
                 embed.description = box(temp_msg, lang="md")
                 embed.set_footer(
-                    text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loan_keys)/10))
+                    text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
                 )
                 loan_pages.append(embed)
             else:
@@ -247,7 +247,7 @@ class Loanshark(commands.Cog):
         """Who owes who what?"""
     
         loans = await self.list_all_loans(ctx)
-        print(loans)
+        loans.sort(key=lambda x: x.get_outstanding(), reverse=True)
 
         pound_len = max(4, len(str(len(loans)))+2)
         
@@ -255,25 +255,22 @@ class Loanshark(commands.Cog):
         loanee_names = []
         amounts = []
         for i, loan in enumerate(loans):
-            loaner = ctx.guild.get_member(int(loan["loaner"]))
-            loanee = ctx.guild.get_member(int(loan["loanee"]))
+            loaner = loan.get_loaner()
+            loanee = loan.get_loanee()
             loaner_names.append(loaner.display_name)
             loanee_names.append(loanee.display_name)
-            amounts.append(loan["outstanding"])
+            amounts.append(loan.get_outstanding())
             
-        loaner_names.sort(key=len)
-        loanee_names.sort(key=len)
         loaner_len = max(8, len(loaner_names[len(loaner_names)-1])+2)
         loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
         
-        amounts.sort()
-        amount_len = max(6, len(str(amounts[len(amounts)-1])))
+        amount_len = max(11, len(str(amounts[len(amounts)-1])))
 
         header = "{pound:{pound_len}}{loaner:{loaner_len}}{loanee:{loanee_len}}{amount:{amount_len}}\n".format(
             pound="#",
             loaner="Loaner",
             loanee="Loanee",
-            amount="Amount",
+            amount="Outstanding",
             pound_len=pound_len,
             loaner_len=loaner_len,
             loanee_len=loanee_len,
@@ -288,9 +285,9 @@ class Loanshark(commands.Cog):
         pos = 1
 
         for i, loan in enumerate(loans):
-            loaner = ctx.guild.get_member(int(loan["loaner"]))
-            loanee = ctx.guild.get_member(int(loan["loanee"]))
-            amount = loan["outstanding"]
+            loaner = loan.get_loaner()
+            loanee = loan.get_loanee()
+            amount = loan.get_outstanding()
 
             temp_msg += (
                 f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
@@ -350,15 +347,19 @@ class Loanshark(commands.Cog):
             loans[loaner_key] = {}
         if loans.get(loaner_key).get(loanee_key) is None:
             loans[loaner_key][loanee_key] = None
-            
+               
+        curr_time = calendar.timegm(ctx.message.created_at.utctimetuple())
+        
         current_loan = loans.get(loaner_key).get(loanee_key)
         if current_loan is None:
-            loans[loaner_key][loanee_key] = {"outstanding": amount, "interest": interest}
+            loans[loaner_key][loanee_key] = {"original_amount": amount, "outstanding": amount, "interest": interest, "created_at": curr_time, "loaner": loaner_key, "loanee": loanee_key}
         else:
-            curr_name = str(await bank.get_currency_name(ctx.guild))
+            curr_name = str(await bank.get_currency_name(ctx.guild))   
+            curr_amount = loans[loaner_key][loanee_key]["outstanding"] 
             loans[loaner_key][loanee_key]["outstanding"] += amount
+            loans[loaner_key][loanee_key]["created_at"] = curr_time
             
-            loan_update_msg = loanee.mention+" already owes "+loaner.mention+" "+str(current_loan["outstanding"])+" "+curr_name+", that loan has been extended ("+str(loans[loaner_key][loanee_key]["outstanding"])+" "+curr_name+")"
+            loan_update_msg = loanee.mention+" already owes "+loaner.mention+" "+str(curr_amount)+" "+curr_name+", that loan has been extended ("+str(loans[loaner_key][loanee_key]["outstanding"])+" "+curr_name+")"
             
             if interest is not None:
                 if (interest is not None and current_loan["interest"] is None) or (interest is not current_loan["interest"]):
@@ -372,63 +373,32 @@ class Loanshark(commands.Cog):
             await ctx.send(loan_update_msg)
                 
         await self.config.guild(ctx.guild).loans.set(loans)
-    
-    
-    async def clear_loan(self, ctx: commands.Context, loaner: discord.Member, loanee: discord.Member):
-        loans = await self.config.guild(ctx.guild).loans()
-        loan = await self.get_debt(ctx, loanee, loaner)
-        if loan is None:
-            return
-            
-        loaner_key = str(loaner.id)
-        loanee_key = str(loanee.id)
-        loans[loaner_key].pop(loanee_key, None)
 
-        await self.config.guild(ctx.guild).loans.set(loans)
-    
-    async def partial_repay_loan(self, ctx: commands.Context, loaner: discord.Member, loanee: discord.Member, repaying: int):
-        loans = await self.config.guild(ctx.guild).loans()
-        loan = await self.get_debt(ctx, loanee, loaner)
-        if loan is None:
-            return         
-        loan["outstanding"] = loan["outstanding"]-repaying
-        loaner_key = str(loaner.id)
-        loanee_key = str(loanee.id)
-        loans[loaner_key][loanee_key] = loan
-        if loan["outstanding"] <= 0:
-            await self.clear_loan(ctx, loaner, loanee)
-        else:
-            await self.config.guild(ctx.guild).loans.set(loans)   
-    
     # Loans where we are the loaner
     async def list_loans(self, ctx: commands.Context, loaner: discord.Member):
-        loans = await self.config.guild(ctx.guild).loans()
-        loaner_key = str(loaner.id)
-        if loans.get(loaner_key):
-            return loans[loaner_key]
-        else:
-            return {}
+        ret = []
+        for i, loan in enumerate(await self.list_all_loans(ctx)):
+            if loan.loaner_key==str(loaner.id):
+                ret.append(loan)
+        return ret
     
     # Loans where we are the loanee
     async def list_debts(self, ctx: commands.Context, loanee: discord.Member):
-        loans = await self.config.guild(ctx.guild).loans()
-        ret = []
-        for i, loaner in enumerate(loans.keys()):
-            loan_dict = loans[loaner]     
-            if loans.get(loanee.id):
-                loan = loan_dict[loanee.id]
-                ret.append({"outstanding": loan["outstanding"], "interest": loan["interest"], "loaner": loaner}) 
+        ret = []      
+        for i, loan in enumerate(await self.list_all_loans(ctx)):
+            if loan.loanee_key==str(loanee.id):
+                ret.append(loan)
         return ret
     
-    # Get Loanee's debt with Loaner
-    async def get_debt(self, ctx: commands.Context, loanee: discord.Member, loaner: discord.Member):
+    # Get Loaner's loan to Loanee
+    async def get_loan(self, ctx: commands.Context, loaner: discord.Member, loanee: discord.Member):
         loans = await self.config.guild(ctx.guild).loans()      
         loaner_key = str(loaner.id)
         loanee_key = str(loanee.id)
         if loans.get(loaner_key):
             loan_dict = loans[loaner_key]
-            if loan_dict.get(loanee_key):  
-                return loan_dict[loanee_key]
+            if loan_dict.get(loanee_key):
+                return Loan(ctx, self.config, loan_dict[loanee_key])
         return None
         
     # All loans as a list
@@ -438,6 +408,66 @@ class Loanshark(commands.Cog):
         for i, loaner in enumerate(loans.keys()):
             loan_dict = loans[loaner]     
             for i, loanee in enumerate(loan_dict.keys()):
-                loan = loan_dict[loanee]
-                ret.append({"outstanding": loan["outstanding"], "interest": loan["interest"], "loaner": loaner, "loanee": loanee}) 
+                ret.append(Loan(ctx, self.config, loan_dict[loanee]))
         return ret
+
+
+
+
+class Loan():
+    def __init__(self, ctx, config, loan0):
+        self.ctx = ctx
+        self.config = config
+        self.loan0 = loan0
+        
+        self.loaner_key      = loan0["loaner"]
+        self.loanee_key      = loan0["loanee"]
+        self.outstanding     = loan0["outstanding"]
+        self.original_amount = self.outstanding
+        
+        if loan0.get("original_amount"):
+            self.original_amount = loan0["original_amount"] #OLD DATA HACK
+             
+        self.timestamp = None
+        if loan0.get("created_at"):
+            self.timestamp = loan0["created_at"]
+        else:
+            self.timestamp = calendar.timegm(self.ctx.message.created_at.utctimetuple())  #OLD DATA HACK
+        
+        self.interest = None
+        if loan0.get("interest"):
+            self.interest = loan0["interest"]     
+
+
+    def get_loaner(self):
+       return self.ctx.guild.get_member(int(self.loaner_key))
+        
+    def get_loanee(self):
+        return self.ctx.guild.get_member(int(self.loanee_key))
+
+    def get_pre_interest_amount(self):
+        return self.outstanding
+
+    def get_outstanding(self):
+        if self.interest is None:
+            return self.outstanding
+        cur_time = calendar.timegm(self.ctx.message.created_at.utctimetuple()) 
+        days = floor((cur_time - self.timestamp) / 86400) + 1;
+        return self.outstanding + ceil((self.outstanding * (self.interest/100)) * days)
+
+    async def repay(self, amount):
+        curr_outstanding = get_outstanding()   
+        curr_outstanding -= amount
+        if curr_outstanding <= 0:
+            await self.clear_loan()
+        else:
+            self.loan0["outstanding"] = curr_outstanding
+            loans = await self.config.guild(self.ctx.guild).loans()   
+            loans[self.loaner_key][self.loanee_key] = self.loan0
+            await self.config.guild(self.ctx.guild).loans.set(loans)  
+    
+    async def clear_loan(self):
+        loans = await self.config.guild(self.ctx.guild).loans() 
+        loans[self.loaner_key].pop(self.loanee_key, None)
+        await self.config.guild(self.ctx.guild).loans.set(loans)
+        
