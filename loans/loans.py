@@ -460,7 +460,7 @@ class Loan():
         return self.outstanding + ceil((self.outstanding * (self.interest/100)) * days)
 
     async def repay(self, amount):
-        curr_outstanding = get_outstanding()   
+        curr_outstanding = self.get_outstanding()   
         curr_outstanding -= amount
         if curr_outstanding <= 0:
             await self.clear_loan()
