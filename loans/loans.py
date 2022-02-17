@@ -248,6 +248,10 @@ class Loanshark(commands.Cog):
     
         loans = await self.list_all_loans(ctx)
         loans.sort(key=lambda x: x.get_outstanding(), reverse=True)
+        
+        if len(loans)==0:      
+            await ctx.send("Nobody has any loans!")
+            return
 
         pound_len = max(4, len(str(len(loans)))+2)
         
