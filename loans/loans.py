@@ -92,6 +92,7 @@ class Loanshark(commands.Cog):
         loan = await self.get_loan(ctx, user, ctx.author)
         if loan is None:
             await ctx.send("You don't owe "+user.display_name+" any "+str(await bank.get_currency_name(ctx.guild)))
+            return
     
         repaying = loan.get_outstanding()
         if repayment is not None:
@@ -460,15 +461,15 @@ class Loan():
         return self.outstanding + ceil((self.outstanding * (self.interest/100)) * days)
 
     async def repay(self, amount):
-        curr_outstanding = self.get_outstanding()   
+        curr_outstanding = self.get_outstanding()
         curr_outstanding -= amount
         if curr_outstanding <= 0:
             await self.clear_loan()
         else:
             self.loan0["outstanding"] = curr_outstanding
-            loans = await self.config.guild(self.ctx.guild).loans()   
+            loans = await self.config.guild(self.ctx.guild).loans()
             loans[self.loaner_key][self.loanee_key] = self.loan0
-            await self.config.guild(self.ctx.guild).loans.set(loans)  
+            await self.config.guild(self.ctx.guild).loans.set(loans)
     
     async def clear_loan(self):
         loans = await self.config.guild(self.ctx.guild).loans() 
