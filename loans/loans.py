@@ -240,6 +240,94 @@ class Loanshark(commands.Cog):
             DEFAULT_CONTROLS if len(loan_pages) > 1 else {"\N{CROSS MARK}": close_menu},
         )
 
+    @commands.guild_only()        
+    @_loan.command()
+    async def debtboard(self, ctx: commands.Context):
+        """Who owes who what?"""
+    
+        loans = await self.list_all_loans(ctx)
+        print(loans)
+
+        pound_len = max(4, len(str(len(loans)))+2)
+        
+        loaner_names = []
+        loanee_names = []
+        amounts = []
+        for i, loan in enumerate(loans):
+            loaner = ctx.guild.get_member(int(loan["loaner"]))
+            loanee = ctx.guild.get_member(int(loan["loanee"]))
+            loaner_names.append(loaner.display_name)
+            loanee_names.append(loanee.display_name)
+            amounts.append(loan["outstanding"])
+            
+        loaner_names.sort(key=len)
+        loanee_names.sort(key=len)
+        loaner_len = max(8, len(loaner_names[len(loaner_names)-1])+2)
+        loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
+        
+        amounts.sort()
+        amount_len = max(6, len(str(amounts[len(amounts)-1])))
+
+        header = "{pound:{pound_len}}{loaner:{loaner_len}}{loanee:{loanee_len}}{amount:{amount_len}}\n".format(
+            pound="#",
+            loaner="Loaner",
+            loanee="Loanee",
+            amount="Amount",
+            pound_len=pound_len,
+            loaner_len=loaner_len,
+            loanee_len=loanee_len,
+            amount_len=amount_len
+        )
+        
+        temp_msg = header       
+        embed_requested = await ctx.embed_requested()
+        base_embed = discord.Embed(title="All Loans")
+        loan_pages = []
+        pos = 1
+
+        for i, loan in enumerate(loans):
+            loaner = ctx.guild.get_member(int(loan["loaner"]))
+            loanee = ctx.guild.get_member(int(loan["loanee"]))
+            amount = loan["outstanding"]
+
+            temp_msg += (
+                f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
+                f"{f'{loaner.display_name}': <{loaner_len-1}} "
+                f"{f'{loanee.display_name}': <{loanee_len-1}} "               
+                f"{f'{amount}': <{amount_len-1}}\n"
+            )
+            
+            if pos % 10 == 0:
+                if embed_requested:
+                    embed = base_embed.copy()
+                    embed.description = box(temp_msg, lang="md")
+                    embed.set_footer(
+                        text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
+                    )
+                    loan_pages.append(embed)
+                else:
+                    loan_pages.append(box(temp_msg, lang="md"))
+                temp_msg = header
+            pos += 1
+        
+        if temp_msg != header:
+            if embed_requested:
+                embed = base_embed.copy()
+                embed.description = box(temp_msg, lang="md")
+                embed.set_footer(
+                    text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
+                )
+                loan_pages.append(embed)
+            else:
+                loan_pages.append(box(temp_msg, lang="md"))
+                
+        await menu(
+            ctx,
+            loan_pages,
+            DEFAULT_CONTROLS if len(loan_pages) > 1 else {"\N{CROSS MARK}": close_menu},
+        )
+
+
     @commands.guild_only()
     @commands.is_owner()
     @_loan.command()
@@ -341,4 +429,13 @@ class Loanshark(commands.Cog):
                 return loan_dict[loanee_key]
         return None
         
-        
+    # All loans as a list
+    async def list_all_loans(self, ctx: commands.Context):
+        loans = await self.config.guild(ctx.guild).loans()
+        ret = []
+        for i, loaner in enumerate(loans.keys()):
+            loan_dict = loans[loaner]     
+            for i, loanee in enumerate(loan_dict.keys()):
+                loan = loan_dict[loanee]
+                ret.append({"outstanding": loan["outstanding"], "interest": loan["interest"], "loaner": loaner, "loanee": loanee}) 
+        return ret
