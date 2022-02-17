@@ -187,7 +187,8 @@ class Loanshark(commands.Cog):
         
         temp_msg = header       
         embed_requested = await ctx.embed_requested()
-        base_embed = discord.Embed(title=loans_for.display_name+"'s Loans")
+        base_embed = discord.Embed()       
+        base_embed.set_author(name=loans_for.display_name+"'s Loans", icon_url=loans_for.avatar_url)
         loan_pages = []
         pos = 1
 
@@ -281,7 +282,8 @@ class Loanshark(commands.Cog):
         
         temp_msg = header       
         embed_requested = await ctx.embed_requested()
-        base_embed = discord.Embed(title="All Loans")
+        base_embed = discord.Embed()
+        base_embed.set_author(name=ctx.guild.name+" - Loans", icon_url=ctx.guild.icon_url)
         loan_pages = []
         pos = 1
 
