@@ -159,14 +159,17 @@ class Loanshark(commands.Cog):
             final_amounts.append(await loan.get_outstanding())
             if not has_interest and loan.interest is not None:
                 has_interest = True
-            
+        
+        loanee_names.sort(key=len)
         loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
         
+        amounts.sort()
         amount_len0 = len(str(amounts[len(amounts)-1]))
         amount_len = max(8, amount_len0)
         if has_interest:
             amount_len = max(9, amount_len0+2) #9 not 8 as the title changes to "Initial"
         
+        final_amounts.sort()
         interest_len0 = len(str(final_amounts[len(final_amounts)-1]))
         interest_len = max(10, interest_len0+2)
 
@@ -265,10 +268,13 @@ class Loanshark(commands.Cog):
             loaner_names.append(loaner.display_name)
             loanee_names.append(loanee.display_name)
             amounts.append(await loan.get_outstanding())
-            
+        
+        loaner_names.sort(key=len)
+        loanee_names.sort(key=len)
         loaner_len = max(8, len(loaner_names[len(loaner_names)-1])+2)
         loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
         
+        amounts.sort()
         amount_len = max(11, len(str(amounts[len(amounts)-1])))
 
         header = "{pound:{pound_len}}{loaner:{loaner_len}}{loanee:{loanee_len}}{amount:{amount_len}}\n".format(
