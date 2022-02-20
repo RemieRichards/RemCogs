@@ -177,7 +177,7 @@ class Loanshark(commands.Cog):
         def make_embed():
             nonlocal temp_table, pages
             msg = temp_table.get_string()
-
+            
             if(embed_requested):
                 embed = base_embed.copy()
                 embed.description = box(msg, lang="md")
@@ -188,7 +188,7 @@ class Loanshark(commands.Cog):
             
             temp_table = base_table.copy()
         
-        for i, loan in enumerate(loans):
+        for i, loan in enumerate(loans,start=1):
             loanee = loan.get_loanee()
             
             interest0 = loan.interest
@@ -197,16 +197,16 @@ class Loanshark(commands.Cog):
             interest = str(interest0)+"%"
             
             if has_interest:
-                temp_table.add_row([f"{i+1}.", loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
+                temp_table.add_row([f"{i}.", loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
             else:
-                temp_table.add_row([f"{i+1}.", loanee.display_name, loan.get_initial_amount()])
+                temp_table.add_row([f"{i}.", loanee.display_name, loan.get_initial_amount()])
             
             if i % 10 == 0:
                 make_embed()
         
         if(len(pages) != ceil(len(loans)/10)):
             make_embed()
-                
+        
         await menu(
             ctx,
             pages,
@@ -279,7 +279,7 @@ class Loanshark(commands.Cog):
             
             temp_table = base_table.copy()
         
-        for i, loan in enumerate(loans):
+        for i, loan in enumerate(loans,start=1):
             loaner = loan.get_loaner()
             
             interest0 = loan.interest
@@ -288,9 +288,9 @@ class Loanshark(commands.Cog):
             interest = str(interest0)+"%"
             
             if has_interest:
-                temp_table.add_row([f"{i+1}.", loaner.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
+                temp_table.add_row([f"{i}.", loaner.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
             else:
-                temp_table.add_row([f"{i+1}.", loaner.display_name, loan.get_initial_amount()])
+                temp_table.add_row([f"{i}.", loaner.display_name, loan.get_initial_amount()])
             
             if i % 10 == 0:
                 make_embed()
@@ -358,7 +358,7 @@ class Loanshark(commands.Cog):
             
             temp_table = base_table.copy()
 
-        for i, loan in enumerate(loans):
+        for i, loan in enumerate(loans,start=1):
             loaner = loan.get_loaner()
             loanee = loan.get_loanee()
             amount = loan.get_initial_amount()
@@ -369,16 +369,16 @@ class Loanshark(commands.Cog):
             interest = str(interest0)+"%"
             
             if has_interest:
-                temp_table.add_row([f"{i+1}.", loaner.display_name, loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
+                temp_table.add_row([f"{i}.", loaner.display_name, loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
             else:
-                temp_table.add_row([f"{i+1}.", loaner.display_name, loanee.display_name, loan.get_initial_amount()])
+                temp_table.add_row([f"{i}.", loaner.display_name, loanee.display_name, loan.get_initial_amount()])
             
             if i % 10 == 0:
                 make_embed()
         
         if(len(pages) != ceil(len(loans)/10)):
             make_embed()
-                
+
         await menu(
             ctx,
             pages,
