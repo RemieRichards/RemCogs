@@ -10,12 +10,16 @@ from redbot.core import commands
 from redbot.core import Config
 from redbot.core.utils.predicates import ReactionPredicate
 from redbot.core.utils.menus import start_adding_reactions
-from redbot.core.utils.chat_formatting import box, humanize_number
+from redbot.core.utils.chat_formatting import box
 from redbot.core.utils.menus import close_menu, menu, DEFAULT_CONTROLS
 from redbot.core.errors import BalanceTooHigh
 
 # Discord 
 import discord
+
+# Other
+import prettytable
+from prettytable import PrettyTable
 
 
 class Loanshark(commands.Cog):
@@ -48,20 +52,21 @@ class Loanshark(commands.Cog):
         loans = await self.config.guild(ctx.guild).loans()
         
         if await bank.can_spend(ctx.author, amount):
-            if ctx.author is user:
-                await ctx.send("TODO: don't let people self-loan, but need for testing rn")
             
-            loan_txt = ""
+            interest_txt = ""
             if interest is not None:
-                loan_txt = " (@ "+str(interest)+"% interest)"
+                interest = min(1000,max(0,interest))
+                interest_txt = " (@ "+str(interest)+"% interest)"
         
-            loan_offer = await ctx.send(ctx.author.mention+" offers to loan "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+loan_txt+" to "+user.mention+", do they accept?")
+            amount = min(10_000_000_000_000,max(0,amount))
+        
+            loan_offer = await ctx.send(ctx.author.mention+" offers to loan "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+interest_txt+" to "+user.mention+", do they accept?")
             start_adding_reactions(loan_offer, ReactionPredicate.YES_OR_NO_EMOJIS)
             pred = ReactionPredicate.yes_or_no(loan_offer, user)
             await ctx.bot.wait_for("reaction_add", check=pred)
             if pred.result is True:
                 await loan_offer.delete()
-                await ctx.send(ctx.author.mention+" loans "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+loan_txt+" to "+user.mention)
+                await ctx.send(ctx.author.mention+" loans "+str(amount)+" "+str(await bank.get_currency_name(ctx.guild))+interest_txt+" to "+user.mention)
                 try:
                     await self.record_loan(ctx, ctx.author, user, amount, interest)
                     await bank.withdraw_credits(ctx.author, amount)
@@ -73,12 +78,7 @@ class Loanshark(commands.Cog):
         else:
             await ctx.send(ctx.author.mention+" you can't afford that much!")
             
-#    @commands.guild_only()        
-#    @_loan.command()
-#    async def collect(self, ctx: commands.Context, user: typing.Optional[discord.Member]):
-#        
-#        return
-    
+            
     @commands.guild_only()
     @_loan.command()
     async def repay(self, ctx: commands.Context, user: discord.Member, repayment: typing.Optional[int]):
@@ -131,10 +131,10 @@ class Loanshark(commands.Cog):
             - `[p]loan list` - Lists all loans where you are the Loaner
             - `[p]loan list user` - Lists all loans where 'user' is the Loaner
         """
-    
+        
         loans_for = ctx.author
         if user is not None:
-            loans_for = user        
+            loans_for = user
             
         loans = await self.list_loans(ctx, loans_for)  
         loans.sort(key=lambda x: x.get_loanee().display_name)
@@ -142,107 +142,166 @@ class Loanshark(commands.Cog):
         if len(loans)==0:
             whom = "You have"
             if loans_for is not ctx.author:
-                whom = loans_for.display_name+" has"        
+                whom = loans_for.display_name+" has"
             await ctx.send(whom+" no loans!")
             return
-
-        pound_len = max(4, len(str(len(loans)))+2)
-               
-        loanee_names = []
-        amounts = []
-        final_amounts = []
+            
         has_interest = False
         for i, loan in enumerate(loans):
-            loanee = loan.get_loanee()
-            loanee_names.append(loanee.display_name)
-            amounts.append(loan.get_initial_amount())
-            final_amounts.append(await loan.get_outstanding())
             if not has_interest and loan.interest is not None:
                 has_interest = True
-        
-        loanee_names.sort(key=len)
-        loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
-        
-        amounts.sort()
-        amount_len0 = len(str(amounts[len(amounts)-1]))
-        amount_len = max(8, amount_len0)
-        if has_interest:
-            amount_len = max(9, amount_len0+2) #9 not 8 as the title changes to "Initial"
-        
-        final_amounts.sort()
-        interest_len0 = len(str(final_amounts[len(final_amounts)-1]))
-        interest_len = max(10, interest_len0+2)
-
-        header = "{pound:{pound_len}}{loanee:{loanee_len}}{amount:{amount_len}}"
-        if has_interest:
-            header += "{interest:{interest_len}}Outstanding"
-        header += "\n"
-        header = header.format(
-            pound="#",
-            loanee="Loanee",
-            amount="Initial" if has_interest else "Amount",
-            interest="Interest",
-            pound_len=pound_len,
-            loanee_len=loanee_len,
-            amount_len=amount_len,
-            interest_len=interest_len
-        )
-        
-        temp_msg = header       
+                break
+                
         embed_requested = await ctx.embed_requested()
         base_embed = discord.Embed()       
         base_embed.set_author(name=loans_for.display_name+"'s Loans", icon_url=loans_for.avatar_url)
-        loan_pages = []
-        pos = 1
+        
+        amount_col_title = "Initial" if has_interest else "Amount"
+        field_names = ["#", "Loanee", amount_col_title]
+        if has_interest:
+            field_names.append("Interest")
+            field_names.append("Outstanding")
+        
+        base_table = PrettyTable(field_names=field_names)
+        base_table.set_style(prettytable.PLAIN_COLUMNS)
+        base_table.right_padding_width = 2
+        base_table.align = "l"
+        base_table.align[amount_col_title] = "r"
+        if has_interest:
+            base_table.align["Interest"]    = "r"
+            base_table.align["Outstanding"] = "r"
 
+        temp_table = base_table.copy()
+        pages = []
+        
+        def make_embed():
+            nonlocal temp_table, pages
+            msg = temp_table.get_string()
+
+            if(embed_requested):
+                embed = base_embed.copy()
+                embed.description = box(msg, lang="md")
+                embed.set_footer(text=f"Page {len(pages)+1}/{ceil(len(loans)/10)}")
+                pages.append(embed)
+            else:
+                pages.append(box(msg, lang="md"))
+            
+            temp_table = base_table.copy()
+        
         for i, loan in enumerate(loans):
             loanee = loan.get_loanee()
-            amount = loan.get_initial_amount()
             
             interest0 = loan.interest
             if interest0 is None:
                 interest0 = 0
             interest = str(interest0)+"%"
-
-            temp_msg += (
-                f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
-                f"{f'{loanee.display_name}': <{loanee_len-1}} "
-                f"{f'{amount}': <{amount_len-1}} "
-            )
             
             if has_interest:
-                temp_msg += f"{f'{interest}': <{interest_len}}" #no -1, as % symbol
-                temp_msg += f"{await loan.get_outstanding()}\n"
-                
-            
-            if pos % 10 == 0:
-                if embed_requested:
-                    embed = base_embed.copy()
-                    embed.description = box(temp_msg, lang="md")
-                    embed.set_footer(
-                        text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
-                    )
-                    loan_pages.append(embed)
-                else:
-                    loan_pages.append(box(temp_msg, lang="md"))
-                temp_msg = header
-            pos += 1
-        
-        if temp_msg != header:
-            if embed_requested:
-                embed = base_embed.copy()
-                embed.description = box(temp_msg, lang="md")
-                embed.set_footer(
-                    text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
-                )
-                loan_pages.append(embed)
+                temp_table.add_row([f"{i+1}.", loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
             else:
-                loan_pages.append(box(temp_msg, lang="md"))
+                temp_table.add_row([f"{i+1}.", loanee.display_name, loan.get_initial_amount()])
+            
+            if i % 10 == 0:
+                make_embed()
+        
+        if(len(pages) != ceil(len(loans)/10)):
+            make_embed()
                 
         await menu(
             ctx,
-            loan_pages,
-            DEFAULT_CONTROLS if len(loan_pages) > 1 else {"\N{CROSS MARK}": close_menu},
+            pages,
+            DEFAULT_CONTROLS if len(pages) > 1 else {"\N{CROSS MARK}": close_menu},
+        )
+
+    @commands.guild_only()
+    @_loan.command(aliases=["debts"])
+    async def debt(self, ctx: commands.Context, user: typing.Optional[discord.Member]):
+        """I owe HOW MUCH!?
+        
+        Examples:
+            - `[p]loan debt` - Lists all loans where you are the Loanee
+            - `[p]loan debt user` - Lists all loans where 'user' is the Loanee
+        """
+        
+        loans_for = ctx.author
+        if user is not None:
+            loans_for = user
+            
+        loans = await self.list_debts(ctx, loans_for)  
+        loans.sort(key=lambda x: x.get_loanee().display_name)
+        
+        if len(loans)==0:
+            whom = "You have"
+            if loans_for is not ctx.author:
+                whom = loans_for.display_name+" has"
+            await ctx.send(whom+" no debts!")
+            return
+            
+        has_interest = False
+        for i, loan in enumerate(loans):
+            if not has_interest and loan.interest is not None:
+                has_interest = True
+                break
+                
+        embed_requested = await ctx.embed_requested()
+        base_embed = discord.Embed()       
+        base_embed.set_author(name=loans_for.display_name+"'s Debts", icon_url=loans_for.avatar_url)
+        
+        amount_col_title = "Initial" if has_interest else "Amount"
+        field_names = ["#", "Loaner", amount_col_title]
+        if has_interest:
+            field_names.append("Interest")
+            field_names.append("Outstanding")
+        
+        base_table = PrettyTable(field_names=field_names)
+        base_table.set_style(prettytable.PLAIN_COLUMNS)
+        base_table.right_padding_width = 2
+        base_table.align = "l"
+        base_table.align[amount_col_title] = "r"
+        if has_interest:
+            base_table.align["Interest"]    = "r"
+            base_table.align["Outstanding"] = "r"
+
+        temp_table = base_table.copy()
+        pages = []
+        
+        def make_embed():
+            nonlocal temp_table, pages
+            msg = temp_table.get_string()
+
+            if(embed_requested):
+                embed = base_embed.copy()
+                embed.description = box(msg, lang="md")
+                embed.set_footer(text=f"Page {len(pages)+1}/{ceil(len(loans)/10)}")
+                pages.append(embed)
+            else:
+                pages.append(box(msg, lang="md"))
+            
+            temp_table = base_table.copy()
+        
+        for i, loan in enumerate(loans):
+            loaner = loan.get_loaner()
+            
+            interest0 = loan.interest
+            if interest0 is None:
+                interest0 = 0
+            interest = str(interest0)+"%"
+            
+            if has_interest:
+                temp_table.add_row([f"{i+1}.", loaner.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
+            else:
+                temp_table.add_row([f"{i+1}.", loaner.display_name, loan.get_initial_amount()])
+            
+            if i % 10 == 0:
+                make_embed()
+        
+        if(len(pages) != ceil(len(loans)/10)):
+            make_embed()
+                
+        await menu(
+            ctx,
+            pages,
+            DEFAULT_CONTROLS if len(pages) > 1 else {"\N{CROSS MARK}": close_menu},
         )
 
     @commands.guild_only()        
@@ -256,85 +315,74 @@ class Loanshark(commands.Cog):
         if len(loans)==0:      
             await ctx.send("Nobody has any loans!")
             return
-
-        pound_len = max(4, len(str(len(loans)))+2)
-        
-        loaner_names = []
-        loanee_names = []
-        amounts = []
-        for i, loan in enumerate(loans):
-            loaner = loan.get_loaner()
-            loanee = loan.get_loanee()
-            loaner_names.append(loaner.display_name)
-            loanee_names.append(loanee.display_name)
-            amounts.append(await loan.get_outstanding())
-        
-        loaner_names.sort(key=len)
-        loanee_names.sort(key=len)
-        loaner_len = max(8, len(loaner_names[len(loaner_names)-1])+2)
-        loanee_len = max(8, len(loanee_names[len(loanee_names)-1])+2)
-        
-        amounts.sort()
-        amount_len = max(11, len(str(amounts[len(amounts)-1])))
-
-        header = "{pound:{pound_len}}{loaner:{loaner_len}}{loanee:{loanee_len}}{amount:{amount_len}}\n".format(
-            pound="#",
-            loaner="Loaner",
-            loanee="Loanee",
-            amount="Outstanding",
-            pound_len=pound_len,
-            loaner_len=loaner_len,
-            loanee_len=loanee_len,
-            amount_len=amount_len
-        )
-        
-        temp_msg = header       
-        embed_requested = await ctx.embed_requested()
-        base_embed = discord.Embed()
-        base_embed.set_author(name=ctx.guild.name+" - Loans", icon_url=ctx.guild.icon_url)
-        loan_pages = []
-        pos = 1
-
-        for i, loan in enumerate(loans):
-            loaner = loan.get_loaner()
-            loanee = loan.get_loanee()
-            amount = await loan.get_outstanding()
-
-            temp_msg += (
-                f"{f'{humanize_number(pos)}.': <{pound_len-1}} "
-                f"{f'{loaner.display_name}': <{loaner_len-1}} "
-                f"{f'{loanee.display_name}': <{loanee_len-1}} "               
-                f"{f'{amount}': <{amount_len-1}}\n"
-            )
             
-            if pos % 10 == 0:
-                if embed_requested:
-                    embed = base_embed.copy()
-                    embed.description = box(temp_msg, lang="md")
-                    embed.set_footer(
-                        text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
-                    )
-                    loan_pages.append(embed)
-                else:
-                    loan_pages.append(box(temp_msg, lang="md"))
-                temp_msg = header
-            pos += 1
+        has_interest = False
+        for i, loan in enumerate(loans):
+            if not has_interest and loan.interest is not None:
+                has_interest = True
+                break
+                
+        embed_requested = await ctx.embed_requested()
+        base_embed = discord.Embed()       
+        base_embed.set_author(name=ctx.guild.name+" - Loans", icon_url=ctx.guild.icon_url)
         
-        if temp_msg != header:
-            if embed_requested:
+        amount_col_title = "Initial" if has_interest else "Amount"
+        field_names = ["#", "Loaner", "Loanee", amount_col_title]
+        if has_interest:
+            field_names.append("Interest")
+            field_names.append("Outstanding")
+        
+        base_table = PrettyTable(field_names=field_names)
+        base_table.set_style(prettytable.PLAIN_COLUMNS)
+        base_table.right_padding_width = 2
+        base_table.align = "l"
+        base_table.align[amount_col_title] = "r"
+        if has_interest:
+            base_table.align["Interest"]    = "r"
+            base_table.align["Outstanding"] = "r"
+            
+        temp_table = base_table.copy()
+        pages = []
+
+        def make_embed():
+            nonlocal temp_table, pages
+            msg = temp_table.get_string()
+
+            if(embed_requested):
                 embed = base_embed.copy()
-                embed.description = box(temp_msg, lang="md")
-                embed.set_footer(
-                    text="Page "+str(len(loan_pages)+1)+"/"+str(ceil(len(loans)/10))
-                )
-                loan_pages.append(embed)
+                embed.description = box(msg, lang="md")
+                embed.set_footer(text=f"Page {len(pages)+1}/{ceil(len(loans)/10)}")
+                pages.append(embed)
             else:
-                loan_pages.append(box(temp_msg, lang="md"))
+                pages.append(box(msg, lang="md"))
+            
+            temp_table = base_table.copy()
+
+        for i, loan in enumerate(loans):
+            loaner = loan.get_loaner()
+            loanee = loan.get_loanee()
+            amount = loan.get_initial_amount()
+            
+            interest0 = loan.interest
+            if interest0 is None:
+                interest0 = 0
+            interest = str(interest0)+"%"
+            
+            if has_interest:
+                temp_table.add_row([f"{i+1}.", loaner.display_name, loanee.display_name, loan.get_initial_amount(), interest, await loan.get_outstanding()])
+            else:
+                temp_table.add_row([f"{i+1}.", loaner.display_name, loanee.display_name, loan.get_initial_amount()])
+            
+            if i % 10 == 0:
+                make_embed()
+        
+        if(len(pages) != ceil(len(loans)/10)):
+            make_embed()
                 
         await menu(
             ctx,
-            loan_pages,
-            DEFAULT_CONTROLS if len(loan_pages) > 1 else {"\N{CROSS MARK}": close_menu},
+            pages,
+            DEFAULT_CONTROLS if len(pages) > 1 else {"\N{CROSS MARK}": close_menu},
         )
 
 
@@ -432,11 +480,11 @@ class Loan():
         
         self.loaner_key      = loan0["loaner"]
         self.loanee_key      = loan0["loanee"]
-        self.outstanding     = loan0["outstanding"]
+        self.outstanding     = min(10_000_000_000_000,max(0,loan0["outstanding"]))
         self.original_amount = self.outstanding
         
         if loan0.get("original_amount"):
-            self.original_amount = loan0["original_amount"] #OLD DATA HACK
+            self.original_amount = min(10_000_000_000_000,max(0,loan0["original_amount"]))
         
         self.interest_calc_day = None
         if loan0.get("interest_calc_day"):
@@ -444,9 +492,8 @@ class Loan():
         
         self.interest = None
         if loan0.get("interest"):
-            self.interest = loan0["interest"]     
-
-
+            self.interest = min(1000,max(0,loan0["interest"]))
+            
     def get_loaner(self):
        return self.ctx.guild.get_member(int(self.loaner_key))
         

@@ -3,7 +3,7 @@
     "install_msg" : "Lend money to your friends! Well... they're your friends *for now!*",
     "name" : "Loans",
     "short" : "Loans innit.",
-    "requirements" : [],
+    "requirements" : ["prettytable"],
     "description" : "Give your friends a loan! Pay your debts! Capitalism Simulator!",
     "permissions" : ["Manage Messages"],
     "tags" : ["Games", "Economy", "Fun"],
